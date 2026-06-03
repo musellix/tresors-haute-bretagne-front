@@ -1,0 +1,19 @@
+{
+  "name": "tresors-haute-bretagne-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Les Trésors de Haute Bretagne - Monorepo (Mobile + Web)",
+  "workspaces": [
+    "apps/mobile",
+    "apps/web",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:mobile": "cd apps/mobile && npm start",
+    "dev:web": "cd apps/web && npm start",
+    "build:mobile": "cd apps/mobile && npx eas build --platform ios && npx eas build --platform android",
+    "build:web": "cd apps/web && npm run build",
+    "lint": "npm run lint --workspaces",
+    "type-check": "npm run type-check --workspaces"
+  }
+}

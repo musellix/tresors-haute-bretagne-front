@@ -1,0 +1,38 @@
+# Frontend - Monorepo Structure
+
+root/
+├── apps/
+│   ├── mobile/          React Native with Expo
+│   │   ├── app/
+│   │   │   ├── _layout.tsx
+│   │   │   └── index.tsx
+│   │   ├── assets/
+│   │   ├── app.json
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── README.md
+│   │
+│   └── web/             React with Vite
+│       ├── src/
+│       │   ├── main.tsx
+│       │   ├── App.tsx
+│       │   ├── App.css
+│       │   └── index.css
+│       ├── index.html
+│       ├── vite.config.ts
+│       ├── tsconfig.json
+│       ├── tsconfig.node.json
+│       ├── package.json
+│       └── README.md
+│
+├── packages/
+│   └── shared/          Shared code (types, API client, utils)
+│       ├── src/
+│       │   └── index.ts
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── README.md
+│
+├── package.json         Workspace root
+├── README.md
+└── .gitignore
