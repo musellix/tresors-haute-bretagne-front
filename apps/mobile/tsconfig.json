@@ -7,10 +7,22 @@
     "resolveJsonModule": true,
     "jsx": "react-jsx",
     "module": "ESNext",
+    "moduleResolution": "bundler",
     "target": "ES2020",
+    "lib": [
+      "ES2020"
+    ],
+    "allowJs": true,
     "paths": {
-      "@tresors/shared": ["../../packages/shared/src/index.ts"]
+      "@tresors/shared": [
+        "../../packages/shared/src/index.ts"
+      ]
     }
   },
-  "extends": "expo/tsconfig"
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.d.ts"
+  ],
+  "extends": "expo/tsconfig.base"
 }

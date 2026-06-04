@@ -3,9 +3,12 @@
     "name": "Les Trésors de Haute Bretagne",
     "slug": "tresors-haute-bretagne",
     "version": "1.0.0",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "icon": "./assets/icon.png",
+    "assetBundlePatterns": ["**/*"],
+    "splash": {
+      "image": "./assets/splash.png",
+      "backgroundColor": "#8BC34A"
+    },
     "ios": {
       "supportsTabletMode": true,
       "bundleIdentifier": "com.tresorshautebretagne.app"
@@ -13,17 +16,22 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#8BC34A"
       },
       "package": "com.tresorshautebretagne.app"
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Les Trésors de Haute Bretagne utilise ta position pour vérifier que tu es bien sur place."
+        }
+      ]
     ],
     "scheme": "tresors"
   }
