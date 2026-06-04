@@ -1,24 +1,32 @@
-import { Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { useEffect } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { useAuthStore } from '../src/stores/authStore';
 
 export default function RootLayout() {
+  const { isInitialized, user, initialize } = useAuthStore();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    initialize();
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    const inAuth = segments[0] === '(auth)';
+    if (!user && !inAuth) {
+      router.replace('/(auth)/login');
+    } else if (user && inAuth) {
+      router.replace('/(tabs)');
+    }
+  }, [isInitialized, user, segments]);
+
   return (
-    <Stack>
-      <Stack.Screen
-        name="index"
-        options={{
-          title: 'Les Trésors de Haute Bretagne',
-        }}
-      />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="hunt/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="hunt/[id]/play" options={{ headerShown: false }} />
     </Stack>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
