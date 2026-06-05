@@ -13,14 +13,18 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// React 18 (apps/web) est hoistée à la racine du monorepo et entre en conflit
-// avec React 19 (apps/mobile). On bloque la version racine pour Metro.
-function esc(str) {
-  return str.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
-}
-config.resolver.blockList = [
-  new RegExp(`^${esc(path.resolve(workspaceRoot, 'node_modules', 'react'))}($|\\${path.sep}.+$)`),
-  new RegExp(`^${esc(path.resolve(workspaceRoot, 'node_modules', 'react-native'))}($|\\${path.sep}.+$)`),
-];
+// apps/web utilise React 18 hoistée à la racine du monorepo.
+// On force TOUTES les résolutions de 'react' vers React 19 de apps/mobile.
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'react' || moduleName === 'react/jsx-runtime' || moduleName === 'react/jsx-dev-runtime') {
+    const base = path.resolve(projectRoot, 'node_modules', 'react');
+    const suffix = moduleName.startsWith('react/') ? moduleName.slice('react'.length) : '';
+    return {
+      filePath: require.resolve(path.join(base, suffix)),
+      type: 'sourceFile',
+    };
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
 
 module.exports = config;
