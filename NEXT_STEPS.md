@@ -2,7 +2,21 @@
 
 ## 🟠 À faire
 
-### 1. Bug UI — bouton "Se connecter" qui rétrécit au chargement
+### 1. Bug encodage — accents affichés en caractères bizarres
+Les textes avec accents (é, è, ê, à, ù...) s'affichent avec des caractères corrompus genre "Ã©", "Ã¨".
+Causé par le script PowerShell qui a réécrit les fichiers en UTF-16 au lieu d'UTF-8.
+Fix : vérifier l'encodage de tous les fichiers `.tsx` et les sauvegarder en UTF-8 sans BOM.
+
+### 2. Bug UI — menu du bas caché par les boutons de navigation Android
+La barre d'onglets (Accueil / Chasses / Korrigans) est partiellement cachée derrière
+les boutons de navigation système Android (retour, accueil, multitâche).
+Fix : ajouter `paddingBottom` dans `tabBarStyle` via `useSafeAreaInsets().bottom`.
+
+### 3. Bug UI — haut de l'appli caché par la caméra / encoche
+Le haut des écrans est rogné par l'encoche ou la caméra perforée du téléphone.
+Fix : s'assurer que `SafeAreaProvider` + `SafeAreaView` edges sont bien configurés sur tous les écrans.
+
+### 4. Bug UI — bouton "Se connecter" qui rétrécit au chargement
 Quand `isLoading` passe à `true`, le bouton change de taille (le spinner est plus petit que le texte),
 ce qui fait bouger tous les éléments autour. Fixer la hauteur du bouton avec `minHeight` fixe.
 
