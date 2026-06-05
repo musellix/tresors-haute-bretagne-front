@@ -15,5 +15,8 @@
     "build:web": "cd apps/web && npm run build",
     "lint": "npm run lint --workspaces",
     "type-check": "npm run type-check --workspaces"
+  },
+  "dependencies": {
+    "react-native-worklets": "^0.9.1"
   }
 }

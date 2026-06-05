@@ -13,4 +13,11 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
+// Force les singletons critiques à venir uniquement de apps/mobile
+config.resolver.extraNodeModules = {
+  'react': path.resolve(projectRoot, 'node_modules/react'),
+  'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
+  'react-native-reanimated': path.resolve(projectRoot, 'node_modules/react-native-reanimated'),
+};
+
 module.exports = config;
