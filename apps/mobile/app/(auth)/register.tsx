@@ -31,7 +31,8 @@ export default function RegisterScreen() {
         [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }],
       );
     } catch (err: any) {
-      const msg = err?.response?.data?.error ?? 'Une erreur est survenue.';
+      console.error('Register error:', JSON.stringify(err?.response?.data), err?.message, err?.code);
+      const msg = err?.response?.data?.error ?? err?.message ?? 'Une erreur est survenue.';
       Alert.alert('Inscription impossible', msg);
     }
   };

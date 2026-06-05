@@ -20,6 +20,7 @@ export default function LoginScreen() {
     }
     try {
       await login({ email: email.trim().toLowerCase(), password });
+      router.replace('/(tabs)');
     } catch (err: any) {
       const msg = err?.response?.data?.error ?? 'Email ou mot de passe incorrect.';
       Alert.alert('Connexion impossible', msg);
