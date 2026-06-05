@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  SafeAreaView, ActivityIndicator,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/stores/authStore';
 import { progressApi, huntApi } from '@tresors/shared';
@@ -18,8 +19,8 @@ export default function HomeScreen() {
 
   useEffect(() => {
     Promise.all([
-      huntApi.getAll().then(setHunts),
-      progressApi.getAll().then(setProgresses),
+      huntApi.getAll().then(setHunts).catch(() => {}),
+      progressApi.getAll().then(setProgresses).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
 
@@ -33,7 +34,7 @@ export default function HomeScreen() {
         <View style={styles.headerStats}>
           <View>
             <Text style={styles.statNumber}>{completed.length}</Text>
-            <Text style={styles.statLabel}>TRÉSORS</Text>
+            <Text style={styles.statLabel}>TRÃ‰SORS</Text>
           </View>
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarText}>
@@ -64,9 +65,9 @@ export default function HomeScreen() {
                 >
                   <View style={styles.progressInfo}>
                     <Text style={styles.progressTitle}>{hunt.title}</Text>
-                    <Text style={styles.progressStep}>Étape {p.currentStep}</Text>
+                    <Text style={styles.progressStep}>Ã‰tape {p.currentStep}</Text>
                   </View>
-                  <Text style={styles.progressArrow}>▶</Text>
+                  <Text style={styles.progressArrow}>â–¶</Text>
                 </TouchableOpacity>
               );
             })}
@@ -82,14 +83,14 @@ export default function HomeScreen() {
             style={styles.exploreButton}
             onPress={() => router.push('/(tabs)/hunts')}
           >
-            <Text style={styles.exploreText}>🗺️  EXPLORER LES CHASSES</Text>
+            <Text style={styles.exploreText}>ðŸ—ºï¸  EXPLORER LES CHASSES</Text>
           </TouchableOpacity>
         </View>
 
         {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />}
 
         <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-          <Text style={styles.logoutText}>Se déconnecter</Text>
+          <Text style={styles.logoutText}>Se dÃ©connecter</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

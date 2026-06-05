@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Image, SafeAreaView, ActivityIndicator, TextInput,
+  Image, ActivityIndicator, TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { huntApi, themeApi } from '@tresors/shared';
 import type { TreasureHuntDTO, ThemeDTO } from '@tresors/shared';
@@ -44,12 +45,12 @@ export default function HuntsScreen() {
         <Text style={styles.pageTitle}>LES CHASSES</Text>
         <TextInput
           style={styles.search}
-          placeholder="🔍  Rechercher..."
+          placeholder="ðŸ”  Rechercher..."
           placeholderTextColor={colors.textLight}
           value={search}
           onChangeText={setSearch}
         />
-        {/* Filtres thèmes */}
+        {/* Filtres thÃ¨mes */}
         <FlatList
           horizontal
           data={[{ id: 0, name: 'Tous', description: '', korrigan: undefined } as ThemeDTO, ...themes]}
@@ -85,7 +86,7 @@ export default function HuntsScreen() {
             keyExtractor={h => String(h.id)}
             contentContainerStyle={styles.list}
             ListEmptyComponent={
-              <Text style={styles.empty}>Aucun parcours trouvé.</Text>
+              <Text style={styles.empty}>Aucun parcours trouvÃ©.</Text>
             }
             renderItem={({ item }) => (
               <HuntCard hunt={item} onPress={() => router.push(`/hunt/${item.id}`)} />
@@ -104,13 +105,13 @@ function HuntCard({ hunt, onPress }: { hunt: TreasureHuntDTO; onPress: () => voi
         <Image source={{ uri: hunt.treasureImageUrl }} style={styles.cardImage} />
       ) : (
         <View style={[styles.cardImage, styles.cardImageFallback]}>
-          <Text style={{ fontSize: 32 }}>🗺️</Text>
+          <Text style={{ fontSize: 32 }}>ðŸ—ºï¸</Text>
         </View>
       )}
       <View style={styles.cardBody}>
         {hunt.theme && (
           <Text style={styles.cardTheme}>
-            {hunt.theme.korrigan?.name?.toUpperCase()} · {hunt.theme.name?.toUpperCase()}
+            {hunt.theme.korrigan?.name?.toUpperCase()} Â· {hunt.theme.name?.toUpperCase()}
           </Text>
         )}
         <Text style={styles.cardTitle}>{hunt.title}</Text>

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Image, SafeAreaView, ActivityIndicator,
+  Image, ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { korriganApi } from '@tresors/shared';
 import type { KorriganDTO } from '@tresors/shared';
@@ -60,7 +61,7 @@ export default function KorrigansScreen() {
                 <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
               ) : (
                 <View style={styles.cardImagePlaceholder}>
-                  <Text style={{ fontSize: 36 }}>🧙</Text>
+                  <Text style={{ fontSize: 36 }}>ðŸ§™</Text>
                 </View>
               )}
             </TouchableOpacity>

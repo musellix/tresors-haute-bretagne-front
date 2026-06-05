@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, SafeAreaView, ActivityIndicator, Alert,
+  Image, ActivityIndicator, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { huntApi, progressApi } from '@tresors/shared';
 import type { TreasureHuntDTO, UserProgressDTO } from '@tresors/shared';
