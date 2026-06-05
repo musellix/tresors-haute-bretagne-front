@@ -13,11 +13,14 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// Force les singletons critiques à venir uniquement de apps/mobile
-config.resolver.extraNodeModules = {
-  'react': path.resolve(projectRoot, 'node_modules/react'),
-  'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
-  'react-native-reanimated': path.resolve(projectRoot, 'node_modules/react-native-reanimated'),
-};
+// React 18 (apps/web) est hoistée à la racine du monorepo et entre en conflit
+// avec React 19 (apps/mobile). On bloque la version racine pour Metro.
+function esc(str) {
+  return str.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+config.resolver.blockList = [
+  new RegExp(`^${esc(path.resolve(workspaceRoot, 'node_modules', 'react'))}($|\\${path.sep}.+$)`),
+  new RegExp(`^${esc(path.resolve(workspaceRoot, 'node_modules', 'react-native'))}($|\\${path.sep}.+$)`),
+];
 
 module.exports = config;
