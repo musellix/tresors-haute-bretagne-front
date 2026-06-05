@@ -2,7 +2,16 @@
 
 ## 🟠 À faire
 
-### 1. Connexion Google
+### 1. Bug UI — bouton "Se connecter" qui rétrécit au chargement
+Quand `isLoading` passe à `true`, le bouton change de taille (le spinner est plus petit que le texte),
+ce qui fait bouger tous les éléments autour. Fixer la hauteur du bouton avec `minHeight` fixe.
+
+### 2. Bug UI — clavier masque les champs sur login/register
+Quand le clavier s'affiche, les champs mot de passe et le bouton "Se connecter" disparaissent
+sous le clavier. Utiliser `ScrollView` + `KeyboardAvoidingView` correctement (behavior `padding`
+sur iOS, `height` sur Android) pour que tout reste visible.
+
+### 3. Connexion Google
 Nécessite un Google Cloud Console project + client IDs Android/iOS.
 - Installer `expo-auth-session` + `expo-web-browser`
 - Ajouter bouton "Connexion avec Google" sur l'écran de login
