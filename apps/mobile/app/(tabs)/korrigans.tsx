@@ -61,7 +61,7 @@ export default function KorrigansScreen() {
                 <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
               ) : (
                 <View style={styles.cardImagePlaceholder}>
-                  <Text style={{ fontSize: 36 }}>ðŸ§™</Text>
+                  <Text style={{ fontSize: 36 }}>{'🧙'}</Text>
                 </View>
               )}
             </TouchableOpacity>
