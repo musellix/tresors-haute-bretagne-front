@@ -188,15 +188,7 @@ export default function PlayScreen() {
         onRestart={async () => {
           try {
             await progressApi.start(huntId);
-            const firstStep = steps.find(s => s.stepOrder === 1);
-            if (firstStep) {
-              setStep(firstStep);
-              setAnswers({});
-              setWrongIds([]);
-              setProximity(null);
-              setDialogueIndex(0);
-              setPhase('proximity');
-            }
+            await loadProgress();
           } catch (e) {
             Alert.alert('Erreur', 'Impossible de recommencer le parcours.');
           }
