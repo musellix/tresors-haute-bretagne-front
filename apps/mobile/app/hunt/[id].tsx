@@ -36,7 +36,8 @@ export default function HuntDetailScreen() {
       const p = await progressApi.start(huntId);
       setProgress(p);
       router.push(`/hunt/${huntId}/play`);
-    } catch {
+    } catch (e: any) {
+      console.error('Start hunt error:', e?.response?.status, JSON.stringify(e?.response?.data));
       Alert.alert('Erreur', 'Impossible de démarrer la chasse.');
     } finally {
       setStarting(false);

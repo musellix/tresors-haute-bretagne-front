@@ -22,6 +22,7 @@ export function setTokenProvider(fn: () => string | null) {
 
 apiClient.interceptors.request.use((config) => {
   const token = _getToken?.();
+  console.log('[API]', config.method?.toUpperCase(), config.url, 'token:', token ? 'present' : 'MISSING');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });

@@ -62,10 +62,10 @@ export default function PlayScreen() {
       const currentStep = allSteps.find(s => s.stepOrder === prog.currentStep);
       if (!currentStep) { setPhase('loading'); return; }
 
-      const fullStep = await huntApi.getStep(huntId, currentStep.id);
-      setStep(fullStep);
+      setStep(currentStep);
       setPhase('proximity');
-    } catch {
+    } catch (e: any) {
+      console.error('loadProgress error:', e?.response?.status, JSON.stringify(e?.response?.data), e?.message);
       Alert.alert('Erreur', 'Impossible de charger la progression.');
       router.back();
     }
@@ -127,8 +127,7 @@ export default function PlayScreen() {
           // Étape suivante
           const next = steps.find(s => s.stepOrder === updated.currentStep);
           if (next) {
-            const fullNext = await huntApi.getStep(huntId, next.id);
-            setStep(fullNext);
+            setStep(next);
             setAnswers({});
             setWrongIds([]);
             setProximity(null);
