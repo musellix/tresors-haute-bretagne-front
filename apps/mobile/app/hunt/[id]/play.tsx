@@ -182,6 +182,7 @@ export default function PlayScreen() {
         proximity={proximity}
         checking={checkingGps}
         onCheck={checkProximity}
+        onBypass={() => { setDialogueIndex(0); setPhase('dialogues'); }}
         onBack={() => router.back()}
       />
     );
@@ -239,11 +240,12 @@ export default function PlayScreen() {
 
 // ── Sous-composants ────────────────────────────────────────────────────────────
 
-function ProximityView({ step, proximity, checking, onCheck, onBack }: {
+function ProximityView({ step, proximity, checking, onCheck, onBypass, onBack }: {
   step: StepDTO;
   proximity: { distanceMeters: number; radiusMeters: number } | null;
   checking: boolean;
   onCheck: () => void;
+  onBypass: () => void;
   onBack: () => void;
 }) {
   const isFar = proximity && !proximity.distanceMeters ? false
@@ -273,8 +275,16 @@ function ProximityView({ step, proximity, checking, onCheck, onBack }: {
         <TouchableOpacity style={styles.primaryButton} onPress={onCheck} disabled={checking}>
           {checking
             ? <ActivityIndicator color={colors.textWhite} />
-            : <Text style={styles.primaryButtonText}>📡  VÉRIFIER MA POSITION</Text>
+            : <Text style={styles.primaryButtonText}>{'📡  VÉRIFIER MA POSITION'}</Text>
           }
+        </TouchableOpacity>
+
+        {/* DEV ONLY — à supprimer en production */}
+        <TouchableOpacity
+          style={[styles.primaryButton, { marginTop: 12, backgroundColor: '#888' }]}
+          onPress={onBypass}
+        >
+          <Text style={styles.primaryButtonText}>{'🧪  [DEV] IGNORER GPS'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
