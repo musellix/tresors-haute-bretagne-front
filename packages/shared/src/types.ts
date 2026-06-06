@@ -98,6 +98,7 @@ export interface UserProgressDTO {
   isTreasureUnlocked: boolean;
   startedAt: string;
   completedAt?: string;
+  firstCompletedAt?: string;
 }
 
 export interface SubmitAnswersRequest {

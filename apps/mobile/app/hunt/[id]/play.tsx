@@ -179,10 +179,41 @@ export default function PlayScreen() {
     return (
       <ProximityView
         step={step!}
+        steps={steps}
+        progress={progress!}
         proximity={proximity}
         checking={checkingGps}
         onCheck={checkProximity}
         onBypass={() => { setDialogueIndex(0); setPhase('dialogues'); }}
+        onRestart={async () => {
+          try {
+            await progressApi.start(huntId);
+            const firstStep = steps.find(s => s.stepOrder === 1);
+            if (firstStep) {
+              setStep(firstStep);
+              setAnswers({});
+              setWrongIds([]);
+              setProximity(null);
+              setDialogueIndex(0);
+              setPhase('proximity');
+            }
+          } catch (e) {
+            Alert.alert('Erreur', 'Impossible de recommencer le parcours.');
+          }
+        }}
+        onPrevStep={() => {
+          if (progress && progress.currentStep > 1) {
+            const prevStep = steps.find(s => s.stepOrder === progress.currentStep - 1);
+            if (prevStep) {
+              setStep(prevStep);
+              setAnswers({});
+              setWrongIds([]);
+              setProximity(null);
+              setDialogueIndex(0);
+              setPhase('proximity');
+            }
+          }
+        }}
         onBack={() => router.back()}
       />
     );
@@ -240,16 +271,22 @@ export default function PlayScreen() {
 
 // ── Sous-composants ────────────────────────────────────────────────────────────
 
-function ProximityView({ step, proximity, checking, onCheck, onBypass, onBack }: {
+function ProximityView({ step, steps, progress, proximity, checking, onCheck, onBypass, onRestart, onPrevStep, onBack }: {
   step: StepDTO;
+  steps: StepDTO[];
+  progress: UserProgressDTO;
   proximity: { distanceMeters: number; radiusMeters: number } | null;
   checking: boolean;
   onCheck: () => void;
   onBypass: () => void;
+  onRestart: () => void;
+  onPrevStep: () => void;
   onBack: () => void;
 }) {
   const isFar = proximity && !proximity.distanceMeters ? false
     : proximity ? proximity.distanceMeters > proximity.radiusMeters : false;
+
+  const canGoPrev = progress.currentStep > 1;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -278,6 +315,25 @@ function ProximityView({ step, proximity, checking, onCheck, onBypass, onBack }:
             : <Text style={styles.primaryButtonText}>{'📡  VÉRIFIER MA POSITION'}</Text>
           }
         </TouchableOpacity>
+
+        {/* Navigation dans le parcours - seulement si pas à l'étape 1 */}
+        {step.stepOrder > 1 && (
+          <View style={styles.navButtonsRow}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={onPrevStep}
+            >
+              <Text style={styles.secondaryButtonText}>{'← Étape précédente'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={onRestart}
+            >
+              <Text style={styles.secondaryButtonText}>{'🔄 Recommencer'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* DEV ONLY — à supprimer en production */}
         <TouchableOpacity
@@ -506,6 +562,31 @@ const styles = StyleSheet.create({
     minWidth: 240,
   },
   primaryButtonText: { color: colors.textWhite, fontWeight: font.bold, fontSize: 15, letterSpacing: 0.5 },
+
+  navButtonsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    width: '100%',
+  },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  secondaryButtonText: {
+    color: colors.text,
+    fontWeight: font.semibold,
+    fontSize: 13,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
 
   // Dialogues
   dialogueContainer: { flexGrow: 1, padding: spacing.lg },
