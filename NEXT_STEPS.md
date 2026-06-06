@@ -16,7 +16,16 @@ Fix : ajouter `paddingBottom` dans `tabBarStyle` via `useSafeAreaInsets().bottom
 Le haut des écrans est rogné par l'encoche ou la caméra perforée du téléphone.
 Fix : s'assurer que `SafeAreaProvider` + `SafeAreaView` edges sont bien configurés sur tous les écrans.
 
-### 4. Bug UI — bouton "Se connecter" qui rétrécit au chargement
+### 4. Bouton "afficher le mot de passe" (œil)
+Ajouter une icône œil sur le champ mot de passe pour basculer entre texte masqué et visible.
+Sur login et register.
+
+### 5. Mot de passe oublié
+Ajouter un lien "Mot de passe oublié ?" sur l'écran de login.
+Nécessite un endpoint back `POST /auth/forgot-password` (envoi d'un email de reset)
+et un écran `/(auth)/forgot-password.tsx`.
+
+### 6. Bug UI — bouton "Se connecter" qui rétrécit au chargement
 Quand `isLoading` passe à `true`, le bouton change de taille (le spinner est plus petit que le texte),
 ce qui fait bouger tous les éléments autour. Fixer la hauteur du bouton avec `minHeight` fixe.
 

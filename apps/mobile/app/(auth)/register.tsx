@@ -72,6 +72,7 @@ export default function RegisterScreen() {
           <TextInput
             style={styles.input}
             placeholder="Mot de passe (8 caractères min.)"
+            autoCapitalize="none"
             placeholderTextColor={colors.textLight}
             secureTextEntry
             value={password}
