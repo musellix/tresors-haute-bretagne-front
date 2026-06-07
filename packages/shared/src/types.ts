@@ -68,11 +68,13 @@ export interface StepDTO {
   radiusMeters: number;
   dialogues?: DialogueDTO[];
   questions?: QuestionDTO[];
+  content?: StepContentItemDTO[]; // Unified content list (dialogues + questions ordered by contentOrder)
 }
 
 export interface DialogueDTO {
   id: number;
   dialogueOrder: number;
+  contentOrder: number;
   text: string;
   audioUrl?: string;
   korrigan?: KorriganDTO;
@@ -81,10 +83,18 @@ export interface DialogueDTO {
 export interface QuestionDTO {
   id: number;
   questionOrder: number;
+  contentOrder: number;
   questionText: string;
   correctAnswer: string;
   explanation?: string;
   questionType: string;
+}
+
+export interface StepContentItemDTO {
+  type: 'dialogue' | 'question';
+  contentOrder: number;
+  dialogue?: DialogueDTO;
+  question?: QuestionDTO;
 }
 
 // ── Progression joueur ────────────────────────────────────────────────────────

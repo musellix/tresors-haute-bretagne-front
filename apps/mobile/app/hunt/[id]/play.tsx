@@ -7,10 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import { huntApi, progressApi } from '@tresors/shared';
-import type { StepDTO, DialogueDTO, QuestionDTO, UserProgressDTO } from '@tresors/shared';
+import type { StepDTO, DialogueDTO, QuestionDTO, UserProgressDTO, StepContentItemDTO } from '@tresors/shared';
 import { colors, spacing, radius, font } from '../../../src/theme';
 
-type Phase = 'loading' | 'proximity' | 'dialogues' | 'questions' | 'treasure' | 'code' | 'completed';
+type Phase = 'loading' | 'proximity' | 'content' | 'treasure' | 'code' | 'completed';
 
 export default function PlayScreen() {
   const router = useRouter();
@@ -26,8 +26,8 @@ export default function PlayScreen() {
   const [proximity, setProximity] = useState<{ distanceMeters: number; radiusMeters: number } | null>(null);
   const [checkingGps, setCheckingGps] = useState(false);
 
-  // Dialogues
-  const [dialogueIndex, setDialogueIndex] = useState(0);
+  // Content (dialogues + questions unified)
+  const [contentIndex, setContentIndex] = useState(0);
 
   // Questions
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -96,8 +96,8 @@ export default function PlayScreen() {
       );
       setProximity({ distanceMeters: result.distanceMeters, radiusMeters: result.radiusMeters });
       if (result.withinRange) {
-        setDialogueIndex(0);
-        setPhase('dialogues');
+        setContentIndex(0);
+        setPhase('content');
       }
     } catch {
       Alert.alert('Erreur GPS', 'Impossible de vérifier ta position.');
@@ -106,44 +106,50 @@ export default function PlayScreen() {
     }
   };
 
-  // ── PHASE : QUESTIONS ──────────────────────────────────────────────────────
+  // ── PHASE : SUBMIT ANSWERS (when reaching a question) ─────────────────────
 
-  const submitAnswers = async () => {
-    if (!step) return;
+  const submitAnswer = async (questionId: number, answer: string) => {
+    if (!step) return false;
     setSubmitting(true);
     try {
-      const payload = step.questions?.map(q => ({
-        questionId: q.id,
-        answer: answers[q.id] ?? '',
-      })) ?? [];
+      const payload = [{ questionId, answer }];
       const result = await progressApi.submitAnswers(huntId, step.id, { answers: payload });
+
       if (result.allCorrect) {
-        const updated = await progressApi.get(huntId);
-        setProgress(updated);
-        if (updated.isTreasureUnlocked) {
-          await loadTreasureCoords();
-          setPhase('treasure');
-        } else {
-          // Étape suivante
-          const next = steps.find(s => s.stepOrder === updated.currentStep);
-          if (next) {
-            setStep(next);
-            setAnswers({});
-            setWrongIds([]);
-            setProximity(null);
-            setDialogueIndex(0);
-            setPhase('proximity');
-          }
-        }
+        // This question is correct, continue to next content
+        return true;
       } else {
-        const hint = await progressApi.getHint(huntId, step.id);
-        setWrongIds(hint.wrongQuestionIds);
-        Alert.alert('Pas tout à fait !', 'Certaines réponses sont incorrectes. Les cases en rouge t\'indiquent lesquelles.');
+        // Wrong answer
+        setWrongIds([questionId]);
+        Alert.alert('Pas tout à fait !', 'Cette réponse est incorrecte. Essaie encore.');
+        return false;
       }
     } catch {
-      Alert.alert('Erreur', 'Impossible de soumettre les réponses.');
+      Alert.alert('Erreur', 'Impossible de soumettre la réponse.');
+      return false;
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleContentComplete = async () => {
+    // When all content is done, check if we should advance to next step or treasure
+    const updated = await progressApi.get(huntId);
+    setProgress(updated);
+    if (updated.isTreasureUnlocked) {
+      await loadTreasureCoords();
+      setPhase('treasure');
+    } else {
+      // Next step
+      const next = steps.find(s => s.stepOrder === updated.currentStep);
+      if (next) {
+        setStep(next);
+        setAnswers({});
+        setWrongIds([]);
+        setProximity(null);
+        setContentIndex(0);
+        setPhase('proximity');
+      }
     }
   };
 
@@ -184,7 +190,7 @@ export default function PlayScreen() {
         proximity={proximity}
         checking={checkingGps}
         onCheck={checkProximity}
-        onBypass={() => { setDialogueIndex(0); setPhase('dialogues'); }}
+        onBypass={() => { setContentIndex(0); setPhase('content'); }}
         onRestart={async () => {
           try {
             await progressApi.start(huntId);
@@ -211,38 +217,51 @@ export default function PlayScreen() {
     );
   }
 
-  if (phase === 'dialogues') {
-    const dialogues = step?.dialogues ?? [];
-    if (dialogues.length === 0 || dialogueIndex >= dialogues.length) {
-      setPhase('questions');
+  if (phase === 'content') {
+    const content = step?.content ?? [];
+    if (content.length === 0 || contentIndex >= content.length) {
+      handleContentComplete();
       return null;
     }
-    return (
-      <DialogueView
-        dialogues={dialogues}
-        index={dialogueIndex}
-        stepTitle={step?.title ?? ''}
-        onNext={() => {
-          if (dialogueIndex + 1 >= dialogues.length) setPhase('questions');
-          else setDialogueIndex(i => i + 1);
-        }}
-        onBack={() => router.back()}
-      />
-    );
-  }
 
-  if (phase === 'questions') {
-    return (
-      <QuestionsView
-        step={step!}
-        answers={answers}
-        wrongIds={wrongIds}
-        submitting={submitting}
-        onChange={(id, val) => setAnswers(a => ({ ...a, [id]: val }))}
-        onSubmit={submitAnswers}
-        onBack={() => setPhase('dialogues')}
-      />
-    );
+    const currentItem = content[contentIndex];
+
+    if (currentItem.type === 'dialogue' && currentItem.dialogue) {
+      return (
+        <DialogueView
+          dialogue={currentItem.dialogue}
+          stepTitle={step?.title ?? ''}
+          currentIndex={contentIndex}
+          totalCount={content.length}
+          onNext={() => setContentIndex(i => i + 1)}
+          onBack={() => router.back()}
+        />
+      );
+    }
+
+    if (currentItem.type === 'question' && currentItem.question) {
+      return (
+        <QuestionView
+          question={currentItem.question}
+          stepTitle={step?.title ?? ''}
+          currentIndex={contentIndex}
+          totalCount={content.length}
+          answer={answers[currentItem.question.id] ?? ''}
+          isWrong={wrongIds.includes(currentItem.question.id)}
+          submitting={submitting}
+          onChange={(val) => setAnswers(a => ({ ...a, [currentItem.question!.id]: val }))}
+          onNext={async () => {
+            const isCorrect = await submitAnswer(currentItem.question!.id, answers[currentItem.question!.id] ?? '');
+            if (isCorrect) {
+              setContentIndex(i => i + 1);
+            }
+          }}
+          onBack={() => router.back()}
+        />
+      );
+    }
+
+    return null;
   }
 
   if (phase === 'treasure') {
@@ -339,22 +358,20 @@ function ProximityView({ step, steps, progress, proximity, checking, onCheck, on
   );
 }
 
-function DialogueView({ dialogues, index, stepTitle, onNext, onBack }: {
-  dialogues: DialogueDTO[];
-  index: number;
+function DialogueView({ dialogue, stepTitle, currentIndex, totalCount, onNext, onBack }: {
+  dialogue: DialogueDTO;
   stepTitle: string;
+  currentIndex: number;
+  totalCount: number;
   onNext: () => void;
   onBack: () => void;
 }) {
-  const dialogue = dialogues[index];
-  const isLast = index === dialogues.length - 1;
-
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.navBar}>
         <TouchableOpacity onPress={onBack}><Text style={styles.navBack}>←</Text></TouchableOpacity>
         <Text style={styles.navTitle}>{stepTitle}</Text>
-        <Text style={styles.navCounter}>{index + 1}/{dialogues.length}</Text>
+        <Text style={styles.navCounter}>{currentIndex + 1}/{totalCount}</Text>
       </View>
       <ScrollView contentContainerStyle={styles.dialogueContainer}>
         <View style={styles.dialogueLine}>
@@ -373,64 +390,57 @@ function DialogueView({ dialogues, index, stepTitle, onNext, onBack }: {
       </ScrollView>
       <View style={styles.dialogueFooter}>
         <TouchableOpacity style={styles.primaryButton} onPress={onNext}>
-          <Text style={styles.primaryButtonText}>
-            {isLast ? '➡  VOIR LES QUESTIONS' : '➡  SUITE'}
-          </Text>
+          <Text style={styles.primaryButtonText}>➡  SUITE</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-function QuestionsView({ step, answers, wrongIds, submitting, onChange, onSubmit, onBack }: {
-  step: StepDTO;
-  answers: Record<number, string>;
-  wrongIds: number[];
+function QuestionView({ question, stepTitle, currentIndex, totalCount, answer, isWrong, submitting, onChange, onNext, onBack }: {
+  question: QuestionDTO;
+  stepTitle: string;
+  currentIndex: number;
+  totalCount: number;
+  answer: string;
+  isWrong: boolean;
   submitting: boolean;
-  onChange: (id: number, val: string) => void;
-  onSubmit: () => void;
+  onChange: (val: string) => void;
+  onNext: () => void;
   onBack: () => void;
 }) {
-  const questions = step.questions ?? [];
-
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.navBar}>
         <TouchableOpacity onPress={onBack}><Text style={styles.navBack}>←</Text></TouchableOpacity>
-        <Text style={styles.navTitle}>{step.title}</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.navTitle}>{stepTitle}</Text>
+        <Text style={styles.navCounter}>{currentIndex + 1}/{totalCount}</Text>
       </View>
       <ScrollView contentContainerStyle={styles.questionsContainer}>
-        <Text style={styles.questionsSubtitle}>
-          Réponds aux {questions.length} question{questions.length > 1 ? 's' : ''} pour progresser.
-        </Text>
-        {questions.map((q, i) => {
-          const isWrong = wrongIds.includes(q.id);
-          return (
-            <View key={q.id} style={[styles.questionCard, isWrong && styles.questionCardWrong]}>
-              <Text style={styles.questionNumber}>Question {i + 1}</Text>
-              <Text style={styles.questionText}>{q.questionText}</Text>
-              <TextInput
-                style={[styles.answerInput, isWrong && styles.answerInputWrong]}
-                placeholder="Ta réponse..."
-                placeholderTextColor={colors.textLight}
-                value={answers[q.id] ?? ''}
-                onChangeText={val => onChange(q.id, val)}
-                returnKeyType="done"
-              />
-              {isWrong && q.explanation ? (
-                <Text style={styles.explanation}>💡 {q.explanation}</Text>
-              ) : null}
-            </View>
-          );
-        })}
+        <View style={[styles.questionCard, isWrong && styles.questionCardWrong]}>
+          <Text style={styles.questionText}>{question.questionText}</Text>
+          <TextInput
+            style={[styles.questionInput, isWrong && styles.questionInputWrong]}
+            value={answer}
+            onChangeText={onChange}
+            placeholder="Ta réponse"
+            placeholderTextColor={colors.textMuted}
+            editable={!submitting}
+          />
+          {isWrong && (
+            <Text style={styles.questionError}>Cette réponse est incorrecte</Text>
+          )}
+        </View>
       </ScrollView>
       <View style={styles.dialogueFooter}>
-        <TouchableOpacity style={styles.primaryButton} onPress={onSubmit} disabled={submitting}>
-          {submitting
-            ? <ActivityIndicator color={colors.textWhite} />
-            : <Text style={styles.primaryButtonText}>✅  VALIDER LES RÉPONSES</Text>
-          }
+        <TouchableOpacity
+          style={[styles.primaryButton, submitting && styles.buttonDisabled]}
+          onPress={onNext}
+          disabled={submitting}
+        >
+          <Text style={styles.primaryButtonText}>
+            {submitting ? 'VÉRIFICATION...' : '➡  VALIDER'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
