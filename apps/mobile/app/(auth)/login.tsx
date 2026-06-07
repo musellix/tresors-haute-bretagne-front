@@ -22,6 +22,12 @@ export default function LoginScreen() {
       await login({ email: email.trim().toLowerCase(), password });
       router.replace('/(tabs)');
     } catch (err: any) {
+      // Network error already formatted in authStore
+      if (err?.message?.includes('contacter le serveur')) {
+        Alert.alert('Serveur inaccessible', err.message);
+        return;
+      }
+      // Authentication error
       const msg = err?.response?.data?.error ?? 'Email ou mot de passe incorrect.';
       Alert.alert('Connexion impossible', msg);
     }

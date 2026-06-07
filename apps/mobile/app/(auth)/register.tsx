@@ -32,6 +32,12 @@ export default function RegisterScreen() {
       );
     } catch (err: any) {
       console.error('Register error:', JSON.stringify(err?.response?.data), err?.message, err?.code);
+      // Network error already formatted in authStore
+      if (err?.message?.includes('contacter le serveur')) {
+        Alert.alert('Serveur inaccessible', err.message);
+        return;
+      }
+      // Server error
       const msg = err?.response?.data?.error ?? err?.message ?? 'Une erreur est survenue.';
       Alert.alert('Inscription impossible', msg);
     }
