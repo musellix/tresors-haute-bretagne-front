@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Image, ActivityIndicator, Alert,
@@ -6,11 +6,101 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
+import { WebView } from 'react-native-webview';
 import { huntApi, progressApi } from '@tresors/shared';
 import type { StepDTO, DialogueDTO, QuestionDTO, UserProgressDTO, StepContentItemDTO } from '@tresors/shared';
 import { colors, spacing, radius, font } from '../../../src/theme';
+import { getKorriganAssets } from '../../../src/korrigans';
 
-type Phase = 'loading' | 'proximity' | 'content' | 'treasure' | 'code' | 'completed';
+type Phase = 'loading' | 'map' | 'content' | 'treasure' | 'completed';
+
+// Toutes les étapes commencent par la carte (localisation requise)
+function stepPhase(_step: StepDTO): 'map' | 'content' {
+  return 'map';
+}
+
+// ── Leaflet / OSM HTML ─────────────────────────────────────────────────────────
+
+const MAP_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; background: #e5e3df; }
+    .leaflet-control-attribution { font-size: 9px; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  var map, destMarker, destCircle, userMarker, didFitBoth = false;
+
+  function initMap() {
+    map = L.map('map', { zoomControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+      maxZoom: 19
+    }).addTo(map);
+    map.setView([48.2, -1.7], 10);
+    window.ReactNativeWebView && window.ReactNativeWebView.postMessage('ready');
+  }
+
+  function setDestination(lat, lon, title, radius) {
+    if (destCircle) map.removeLayer(destCircle);
+    if (destMarker) map.removeLayer(destMarker);
+    didFitBoth = false;
+    destCircle = L.circle([lat, lon], {
+      radius: radius, color: '#c0392b', fillColor: '#e74c3c', fillOpacity: 0.12, weight: 2
+    }).addTo(map);
+    var icon = L.divIcon({
+      html: '<div style="width:28px;height:28px;background:#c0392b;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4)"></div>',
+      iconSize: [28, 28], iconAnchor: [14, 28], className: ''
+    });
+    destMarker = L.marker([lat, lon], { icon: icon }).addTo(map);
+    destMarker.bindPopup('<b>' + title + '</b>').openPopup();
+    if (!userMarker) { map.setView([lat, lon], 16); }
+    else { fitBoth(); }
+  }
+
+  function setUserLocation(lat, lon) {
+    if (!userMarker) {
+      var icon = L.divIcon({
+        html: '<div style="width:14px;height:14px;background:#2980b9;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',
+        iconSize: [14, 14], iconAnchor: [7, 7], className: ''
+      });
+      userMarker = L.marker([lat, lon], { icon: icon }).addTo(map);
+      userMarker.bindPopup('Vous êtes ici');
+      if (destMarker) fitBoth();
+    } else {
+      userMarker.setLatLng([lat, lon]);
+      if (!didFitBoth && destMarker) fitBoth();
+    }
+  }
+
+  function fitBoth() {
+    if (destMarker && userMarker) {
+      var bounds = L.latLngBounds([destMarker.getLatLng(), userMarker.getLatLng()]);
+      map.fitBounds(bounds, { padding: [60, 60] });
+      didFitBoth = true;
+    }
+  }
+
+  window.handleRNMessage = function(jsonStr) {
+    try {
+      var msg = JSON.parse(jsonStr);
+      if (msg.type === 'destination') setDestination(msg.lat, msg.lon, msg.title, msg.radius);
+      if (msg.type === 'userLocation') setUserLocation(msg.lat, msg.lon);
+    } catch(e) {}
+  };
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onload="initMap()"></script>
+</body>
+</html>`;
+
+// ── Écran principal ────────────────────────────────────────────────────────────
 
 export default function PlayScreen() {
   const router = useRouter();
@@ -22,35 +112,20 @@ export default function PlayScreen() {
   const [step, setStep] = useState<StepDTO | null>(null);
   const [steps, setSteps] = useState<StepDTO[]>([]);
 
-  // Proximity
-  const [proximity, setProximity] = useState<{ distanceMeters: number; radiusMeters: number } | null>(null);
-  const [checkingGps, setCheckingGps] = useState(false);
-
-  // Content (dialogues + questions unified)
-  const [contentIndex, setContentIndex] = useState(0);
-
-  // Questions
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [wrongIds, setWrongIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Treasure
   const [treasureCoords, setTreasureCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [code, setCode] = useState('');
   const [validatingCode, setValidatingCode] = useState(false);
 
-  useEffect(() => {
-    loadProgress();
-  }, []);
+  useEffect(() => { loadProgress(); }, []);
 
   const loadProgress = async () => {
     try {
-      const [prog, allSteps] = await Promise.all([
-        progressApi.get(huntId),
-        huntApi.getSteps(huntId),
-      ]);
-      setProgress(prog);
-      setSteps(allSteps);
+      const allSteps = await huntApi.getSteps(huntId);
+      let prog = await progressApi.get(huntId);
 
       if (prog.isCompleted) { setPhase('completed'); return; }
       if (prog.isTreasureUnlocked) {
@@ -62,10 +137,11 @@ export default function PlayScreen() {
       const currentStep = allSteps.find(s => s.stepOrder === prog.currentStep);
       if (!currentStep) { setPhase('loading'); return; }
 
+      setProgress(prog);
+      setSteps(allSteps);
       setStep(currentStep);
-      setPhase('proximity');
+      setPhase('map');
     } catch (e: any) {
-      console.error('loadProgress error:', e?.response?.status, JSON.stringify(e?.response?.data), e?.message);
       Alert.alert('Erreur', 'Impossible de charger la progression.');
       router.back();
     }
@@ -78,82 +154,87 @@ export default function PlayScreen() {
     } catch {}
   };
 
-  // ── PHASE : PROXIMITY ──────────────────────────────────────────────────────
+  // ── Navigation entre étapes ────────────────────────────────────────────────
 
-  const checkProximity = async () => {
-    if (!step) return;
-    setCheckingGps(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('GPS refusé', 'Autorise la localisation pour jouer.');
-        setCheckingGps(false);
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const result = await progressApi.checkProximity(
-        huntId, step.id, loc.coords.latitude, loc.coords.longitude,
-      );
-      setProximity({ distanceMeters: result.distanceMeters, radiusMeters: result.radiusMeters });
-      if (result.withinRange) {
-        setContentIndex(0);
-        setPhase('content');
-      }
-    } catch {
-      Alert.alert('Erreur GPS', 'Impossible de vérifier ta position.');
-    } finally {
-      setCheckingGps(false);
+  const handlePrevStep = () => {
+    if (!step || step.stepOrder <= 1) return;
+    const prevStep = steps.find(s => s.stepOrder === step.stepOrder - 1);
+    if (prevStep) {
+      setStep(prevStep);
+      setAnswers({});
+      setWrongIds([]);
+      setPhase(stepPhase(prevStep));
     }
   };
 
-  // ── PHASE : SUBMIT ANSWERS (when reaching a question) ─────────────────────
+  // ── Soumission de toutes les réponses d'une étape ─────────────────────────
 
-  const submitAnswer = async (questionId: number, answer: string) => {
-    if (!step) return false;
-    setSubmitting(true);
-    try {
-      const payload = [{ questionId, answer }];
-      const result = await progressApi.submitAnswers(huntId, step.id, { answers: payload });
+  const handleSubmitContent = async () => {
+    if (!step) return;
+    const questions = step.content?.filter(c => c.type === 'question' && c.question) ?? [];
 
-      if (result.allCorrect) {
-        // This question is correct, continue to next content
-        return true;
-      } else {
-        // Wrong answer
-        setWrongIds([questionId]);
-        Alert.alert('Pas tout à fait !', 'Cette réponse est incorrecte. Essaie encore.');
-        return false;
+    if (questions.length === 0) {
+      setSubmitting(true);
+      try {
+        await progressApi.submitAnswers(huntId, step.id, { answers: [] });
+        await handleContentComplete();
+      } catch {
+        Alert.alert('Erreur', 'Impossible de continuer.');
+      } finally {
+        setSubmitting(false);
       }
+      return;
+    }
+
+    const unanswered = questions.filter(c => !(answers[c.question!.id] ?? '').trim());
+    if (unanswered.length > 0) {
+      Alert.alert('Énigmes sans réponse', 'Réponds à toutes les énigmes avant de continuer !');
+      return;
+    }
+
+    setSubmitting(true);
+    setWrongIds([]);
+    try {
+      // Soumettre les réponses (sauvegarde sans bloquer — vérification uniquement à La Cache)
+      await progressApi.submitAnswers(huntId, step.id, {
+        answers: questions.map(c => ({ questionId: c.question!.id, answer: answers[c.question!.id] ?? '' })),
+      });
+      await handleContentComplete();
     } catch {
-      Alert.alert('Erreur', 'Impossible de soumettre la réponse.');
-      return false;
+      Alert.alert('Erreur', 'Impossible de soumettre les réponses.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleContentComplete = async () => {
-    // When all content is done, check if we should advance to next step or treasure
     const updated = await progressApi.get(huntId);
     setProgress(updated);
     if (updated.isTreasureUnlocked) {
       await loadTreasureCoords();
       setPhase('treasure');
     } else {
-      // Next step
       const next = steps.find(s => s.stepOrder === updated.currentStep);
-      if (next) {
+      if (next && next.id !== step?.id) {
         setStep(next);
         setAnswers({});
         setWrongIds([]);
-        setProximity(null);
-        setContentIndex(0);
-        setPhase('proximity');
+        setPhase(stepPhase(next));
+      } else {
+        // Bloqué à la dernière étape : certaines réponses du parcours sont fausses
+        const lastQStep = [...steps].reverse().find(s => s.content?.some(c => c.type === 'question'));
+        Alert.alert('Réponses incorrectes', 'Certaines de tes réponses sont fausses. Corrige-les pour accéder à La Cache !');
+        if (lastQStep) {
+          setStep(lastQStep);
+          setAnswers({});
+          setWrongIds([]);
+          setPhase('content');
+        }
       }
     }
   };
 
-  // ── PHASE : CODE ───────────────────────────────────────────────────────────
+  // ── Validation code final ──────────────────────────────────────────────────
 
   const validateCode = async () => {
     setValidatingCode(true);
@@ -167,7 +248,7 @@ export default function PlayScreen() {
     }
   };
 
-  // ── RENDUS ─────────────────────────────────────────────────────────────────
+  // ── Rendus ─────────────────────────────────────────────────────────────────
 
   if (phase === 'loading') {
     return (
@@ -181,87 +262,30 @@ export default function PlayScreen() {
     return <CompletedView onBack={() => router.replace(`/hunt/${huntId}`)} />;
   }
 
-  if (phase === 'proximity') {
+  if (phase === 'map') {
     return (
-      <ProximityView
+      <MapPhaseView
         step={step!}
-        steps={steps}
         progress={progress!}
-        proximity={proximity}
-        checking={checkingGps}
-        onCheck={checkProximity}
-        onBypass={() => { setContentIndex(0); setPhase('content'); }}
-        onRestart={async () => {
-          try {
-            await progressApi.start(huntId);
-            await loadProgress();
-          } catch (e) {
-            Alert.alert('Erreur', 'Impossible de recommencer le parcours.');
-          }
-        }}
-        onPrevStep={() => {
-          if (progress && progress.currentStep > 1) {
-            const prevStep = steps.find(s => s.stepOrder === progress.currentStep - 1);
-            if (prevStep) {
-              setStep(prevStep);
-              setAnswers({});
-              setWrongIds([]);
-              setProximity(null);
-              setDialogueIndex(0);
-              setPhase('proximity');
-            }
-          }
-        }}
+        onNext={() => setPhase('content')}
+        onPrev={handlePrevStep}
         onBack={() => router.back()}
       />
     );
   }
 
   if (phase === 'content') {
-    const content = step?.content ?? [];
-    if (content.length === 0 || contentIndex >= content.length) {
-      handleContentComplete();
-      return null;
-    }
-
-    const currentItem = content[contentIndex];
-
-    if (currentItem.type === 'dialogue' && currentItem.dialogue) {
-      return (
-        <DialogueView
-          dialogue={currentItem.dialogue}
-          stepTitle={step?.title ?? ''}
-          currentIndex={contentIndex}
-          totalCount={content.length}
-          onNext={() => setContentIndex(i => i + 1)}
-          onBack={() => router.back()}
-        />
-      );
-    }
-
-    if (currentItem.type === 'question' && currentItem.question) {
-      return (
-        <QuestionView
-          question={currentItem.question}
-          stepTitle={step?.title ?? ''}
-          currentIndex={contentIndex}
-          totalCount={content.length}
-          answer={answers[currentItem.question.id] ?? ''}
-          isWrong={wrongIds.includes(currentItem.question.id)}
-          submitting={submitting}
-          onChange={(val) => setAnswers(a => ({ ...a, [currentItem.question!.id]: val }))}
-          onNext={async () => {
-            const isCorrect = await submitAnswer(currentItem.question!.id, answers[currentItem.question!.id] ?? '');
-            if (isCorrect) {
-              setContentIndex(i => i + 1);
-            }
-          }}
-          onBack={() => router.back()}
-        />
-      );
-    }
-
-    return null;
+    return (
+      <ContentView
+        step={step!}
+        answers={answers}
+        wrongIds={wrongIds}
+        submitting={submitting}
+        onAnswerChange={(qId, val) => setAnswers(a => ({ ...a, [qId]: val }))}
+        onSubmit={handleSubmitContent}
+        onBack={() => setPhase('map')}
+      />
+    );
   }
 
   if (phase === 'treasure') {
@@ -280,172 +304,242 @@ export default function PlayScreen() {
   return null;
 }
 
-// ── Sous-composants ────────────────────────────────────────────────────────────
+// ── MapPhaseView ───────────────────────────────────────────────────────────────
 
-function ProximityView({ step, steps, progress, proximity, checking, onCheck, onBypass, onRestart, onPrevStep, onBack }: {
+function MapPhaseView({ step, progress, onNext, onPrev, onBack }: {
   step: StepDTO;
-  steps: StepDTO[];
   progress: UserProgressDTO;
-  proximity: { distanceMeters: number; radiusMeters: number } | null;
-  checking: boolean;
-  onCheck: () => void;
-  onBypass: () => void;
-  onRestart: () => void;
-  onPrevStep: () => void;
+  onNext: () => void;
+  onPrev: () => void;
   onBack: () => void;
 }) {
-  const isFar = proximity && !proximity.distanceMeters ? false
-    : proximity ? proximity.distanceMeters > proximity.radiusMeters : false;
+  const webViewRef = useRef<WebView>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
 
-  const canGoPrev = progress.currentStep > 1;
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || !active) return;
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (active) setUserLocation({ lat: loc.coords.latitude, lon: loc.coords.longitude });
+      locationSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
+        (l) => { if (active) setUserLocation({ lat: l.coords.latitude, lon: l.coords.longitude }); },
+      );
+    })();
+    return () => {
+      active = false;
+      locationSubRef.current?.remove();
+    };
+  }, []);
+
+  const inject = useCallback((data: object) => {
+    const json = JSON.stringify(JSON.stringify(data));
+    webViewRef.current?.injectJavaScript(`window.handleRNMessage(${json}); true;`);
+  }, []);
+
+  // Envoyer la destination quand la carte est prête ou que l'étape change
+  useEffect(() => {
+    if (mapReady) {
+      inject({ type: 'destination', lat: step.latitude, lon: step.longitude, title: step.title, radius: step.radiusMeters });
+    }
+  }, [step, mapReady, inject]);
+
+  // Mettre à jour la position utilisateur dès qu'elle change
+  useEffect(() => {
+    if (mapReady && userLocation) {
+      inject({ type: 'userLocation', lat: userLocation.lat, lon: userLocation.lon });
+    }
+  }, [userLocation, mapReady, inject]);
+
+  const handleWebViewMessage = (event: { nativeEvent: { data: string } }) => {
+    if (event.nativeEvent.data === 'ready') setMapReady(true);
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.navBar}>
         <TouchableOpacity onPress={onBack}><Text style={styles.navBack}>←</Text></TouchableOpacity>
-        <Text style={styles.navTitle}>ÉTAPE {step.stepOrder}</Text>
+        <Text style={styles.navTitle}>{step.title}</Text>
         <View style={{ width: 40 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.centered}>
-        <Text style={styles.phaseEmoji}>📍</Text>
-        <Text style={styles.phaseTitle}>{step.title}</Text>
-        {step.description ? <Text style={styles.phaseDesc}>{step.description}</Text> : null}
 
-        {proximity && isFar && (
-          <View style={styles.distanceBanner}>
-            <Text style={styles.distanceText}>
-              Tu es à <Text style={{ fontWeight: font.bold }}>{proximity.distanceMeters} m</Text> de l'étape.{'\n'}
-              Rapproche-toi ({proximity.radiusMeters} m max).
-            </Text>
-          </View>
+      <WebView
+        ref={webViewRef}
+        style={{ flex: 1 }}
+        source={{ html: MAP_HTML }}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        onMessage={handleWebViewMessage}
+      />
+
+      <View style={styles.mapFooter}>
+        {step.stepOrder > 1 ? (
+          <TouchableOpacity style={[styles.mapBtn, styles.mapBtnSecondary]} onPress={onPrev}>
+            <Text style={styles.mapBtnSecondaryText}>← Précédent</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ flex: 1 }} />
         )}
-
-        <TouchableOpacity style={styles.primaryButton} onPress={onCheck} disabled={checking}>
-          {checking
-            ? <ActivityIndicator color={colors.textWhite} />
-            : <Text style={styles.primaryButtonText}>{'📡  VÉRIFIER MA POSITION'}</Text>
-          }
-        </TouchableOpacity>
-
-        {/* Navigation dans le parcours - seulement si pas à l'étape 1 */}
-        {step.stepOrder > 1 && (
-          <View style={styles.navButtonsRow}>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={onPrevStep}
-            >
-              <Text style={styles.secondaryButtonText}>{'← Étape précédente'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={onRestart}
-            >
-              <Text style={styles.secondaryButtonText}>{'🔄 Recommencer'}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* DEV ONLY — à supprimer en production */}
-        <TouchableOpacity
-          style={[styles.primaryButton, { marginTop: 12, backgroundColor: '#888' }]}
-          onPress={onBypass}
-        >
-          <Text style={styles.primaryButtonText}>{'🧪  [DEV] IGNORER GPS'}</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function DialogueView({ dialogue, stepTitle, currentIndex, totalCount, onNext, onBack }: {
-  dialogue: DialogueDTO;
-  stepTitle: string;
-  currentIndex: number;
-  totalCount: number;
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={onBack}><Text style={styles.navBack}>←</Text></TouchableOpacity>
-        <Text style={styles.navTitle}>{stepTitle}</Text>
-        <Text style={styles.navCounter}>{currentIndex + 1}/{totalCount}</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.dialogueContainer}>
-        <View style={styles.dialogueLine}>
-          {dialogue.korrigan?.imageUrl ? (
-            <Image source={{ uri: dialogue.korrigan.imageUrl }} style={styles.dialogueAvatar} />
-          ) : (
-            <View style={[styles.dialogueAvatar, styles.dialogueAvatarFallback]}>
-              <Text style={{ fontSize: 22 }}>🧙</Text>
-            </View>
-          )}
-          <View style={styles.dialogueBubble}>
-            <Text style={styles.dialogueSpeaker}>{dialogue.korrigan?.name ?? 'Korrigan'}</Text>
-            <Text style={styles.dialogueText}>{dialogue.text}</Text>
-          </View>
-        </View>
-      </ScrollView>
-      <View style={styles.dialogueFooter}>
-        <TouchableOpacity style={styles.primaryButton} onPress={onNext}>
-          <Text style={styles.primaryButtonText}>➡  SUITE</Text>
+        <TouchableOpacity style={[styles.mapBtn, styles.mapBtnPrimary]} onPress={onNext}>
+          <Text style={styles.mapBtnPrimaryText}>Suivant →</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-function QuestionView({ question, stepTitle, currentIndex, totalCount, answer, isWrong, submitting, onChange, onNext, onBack }: {
-  question: QuestionDTO;
-  stepTitle: string;
-  currentIndex: number;
-  totalCount: number;
-  answer: string;
-  isWrong: boolean;
+// ── buildDisplayItems ──────────────────────────────────────────────────────────
+// Fusionne le dialogue juste avant une question dans la carte question.
+
+type DisplayItem =
+  | { kind: 'info'; text: string; idx: number }
+  | { kind: 'dialogue'; dialogue: DialogueDTO; idx: number }
+  | { kind: 'question'; question: QuestionDTO; intro?: DialogueDTO; idx: number };
+
+function buildDisplayItems(content: StepContentItemDTO[]): DisplayItem[] {
+  const items: DisplayItem[] = [];
+  let skipNext = false;
+  const filtered = content;
+  for (let i = 0; i < filtered.length; i++) {
+    if (skipNext) { skipNext = false; continue; }
+    const item = filtered[i];
+    const next = filtered[i + 1];
+    if (item.type === 'dialogue' && item.dialogue) {
+      if (!item.dialogue.korrigan) {
+        items.push({ kind: 'info', text: item.dialogue.text, idx: i });
+      } else if (next?.type === 'question' && next.question) {
+        items.push({ kind: 'question', question: next.question, intro: item.dialogue, idx: i });
+        skipNext = true;
+      } else {
+        items.push({ kind: 'dialogue', dialogue: item.dialogue, idx: i });
+      }
+    } else if (item.type === 'question' && item.question) {
+      items.push({ kind: 'question', question: item.question, idx: i });
+    }
+  }
+  return items;
+}
+
+// ── ContentView ────────────────────────────────────────────────────────────────
+// Affiche tout le contenu d'une étape (dialogues + questions) en un seul scroll.
+
+function ContentView({ step, answers, wrongIds, submitting, onAnswerChange, onSubmit, onBack }: {
+  step: StepDTO;
+  answers: Record<number, string>;
+  wrongIds: number[];
   submitting: boolean;
-  onChange: (val: string) => void;
-  onNext: () => void;
+  onAnswerChange: (questionId: number, val: string) => void;
+  onSubmit: () => void;
   onBack: () => void;
 }) {
+  const displayItems = buildDisplayItems(step.content ?? []);
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.navBar}>
         <TouchableOpacity onPress={onBack}><Text style={styles.navBack}>←</Text></TouchableOpacity>
-        <Text style={styles.navTitle}>{stepTitle}</Text>
-        <Text style={styles.navCounter}>{currentIndex + 1}/{totalCount}</Text>
+        <Text style={styles.navTitle}>{step.title}</Text>
+        <View style={{ width: 40 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.questionsContainer}>
-        <View style={[styles.questionCard, isWrong && styles.questionCardWrong]}>
-          <Text style={styles.questionText}>{question.questionText}</Text>
-          <TextInput
-            style={[styles.questionInput, isWrong && styles.questionInputWrong]}
-            value={answer}
-            onChangeText={onChange}
-            placeholder="Ta réponse"
-            placeholderTextColor={colors.textMuted}
-            editable={!submitting}
-          />
-          {isWrong && (
-            <Text style={styles.questionError}>Cette réponse est incorrecte</Text>
-          )}
+      <ScrollView contentContainerStyle={styles.contentScrollContainer}>
+        {displayItems.map((di) => {
+          if (di.kind === 'info') {
+            return (
+              <View key={di.idx} style={styles.infoBox}>
+                <Text style={styles.infoBoxIcon}>ℹ</Text>
+                <Text style={styles.infoBoxText}>{di.text}</Text>
+              </View>
+            );
+          }
+          if (di.kind === 'dialogue') {
+            const k = di.dialogue.korrigan;
+            const ka = getKorriganAssets(k?.name);
+            return (
+              <View key={di.idx} style={styles.dialogueLine}>
+                {ka ? (
+                  <Image source={ka.image} style={styles.dialogueAvatar} />
+                ) : (
+                  <View style={[styles.dialogueAvatar, styles.dialogueAvatarFallback]}>
+                    <Text style={{ fontSize: 22 }}>🧙</Text>
+                  </View>
+                )}
+                <View style={styles.dialogueBubble}>
+                  <Text style={[styles.dialogueSpeaker, ka && { color: ka.color }]}>{k?.name ?? 'Korrigan'}</Text>
+                  <Text style={styles.dialogueText}>{di.dialogue.text}</Text>
+                </View>
+              </View>
+            );
+          }
+          if (di.kind === 'question') {
+            const isWrong = wrongIds.includes(di.question.id);
+            if (di.intro) {
+              const k = di.intro.korrigan;
+              const ka = getKorriganAssets(k?.name);
+              return (
+                <View key={di.idx} style={styles.dialogueLine}>
+                  {ka ? (
+                    <Image source={ka.image} style={styles.dialogueAvatar} />
+                  ) : (
+                    <View style={[styles.dialogueAvatar, styles.dialogueAvatarFallback]}>
+                      <Text style={{ fontSize: 22 }}>🧙</Text>
+                    </View>
+                  )}
+                  <View style={[styles.dialogueBubble, isWrong && { borderColor: colors.error }]}>
+                    <Text style={[styles.dialogueSpeaker, ka && { color: ka.color }]}>{k?.name ?? 'Korrigan'}</Text>
+                    <Text style={styles.dialogueText}>{di.intro.text}</Text>
+                    <View style={styles.questionDivider} />
+                    <Text style={styles.questionText}>{di.question.questionText}</Text>
+                    <TextInput
+                      style={[styles.answerInput, isWrong && styles.answerInputWrong]}
+                      value={answers[di.question.id] ?? ''}
+                      onChangeText={(val) => onAnswerChange(di.question.id, val)}
+                      placeholder="Ta réponse"
+                      placeholderTextColor={colors.textLight}
+                      editable={!submitting}
+                    />
+                    {isWrong && <Text style={styles.explanation}>Réponse incorrecte</Text>}
+                  </View>
+                </View>
+              );
+            }
+            return (
+              <View key={di.idx} style={[styles.questionCard, isWrong && styles.questionCardWrong]}>
+                <Text style={styles.questionLabel}>❓ ÉNIGME</Text>
+                <Text style={styles.questionText}>{di.question.questionText}</Text>
+                <TextInput
+                  style={[styles.answerInput, isWrong && styles.answerInputWrong]}
+                  value={answers[di.question.id] ?? ''}
+                  onChangeText={(val) => onAnswerChange(di.question.id, val)}
+                  placeholder="Ta réponse"
+                  placeholderTextColor={colors.textLight}
+                  editable={!submitting}
+                />
+                {isWrong && <Text style={styles.explanation}>Réponse incorrecte</Text>}
+              </View>
+            );
+          }
+          return null;
+        })}
+        <View style={styles.contentCta}>
+          <TouchableOpacity
+            style={[styles.primaryButton, submitting && styles.buttonDisabled]}
+            onPress={onSubmit}
+            disabled={submitting}
+          >
+            <Text style={styles.primaryButtonText}>
+              {submitting ? 'VÉRIFICATION...' : '➡  CONTINUER'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
-      <View style={styles.dialogueFooter}>
-        <TouchableOpacity
-          style={[styles.primaryButton, submitting && styles.buttonDisabled]}
-          onPress={onNext}
-          disabled={submitting}
-        >
-          <Text style={styles.primaryButtonText}>
-            {submitting ? 'VÉRIFICATION...' : '➡  VALIDER'}
-          </Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
+
+// ── TreasureView ───────────────────────────────────────────────────────────────
 
 function TreasureView({ coords, code, onCodeChange, validating, onValidate, onBack }: {
   coords: { latitude: number; longitude: number } | null;
@@ -490,7 +584,7 @@ function TreasureView({ coords, code, onCodeChange, validating, onValidate, onBa
             maxLength={8}
           />
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={[styles.primaryButton, (validating || code.length < 4) && styles.buttonDisabled]}
             onPress={onValidate}
             disabled={validating || code.length < 4}
           >
@@ -504,6 +598,8 @@ function TreasureView({ coords, code, onCodeChange, validating, onValidate, onBa
     </SafeAreaView>
   );
 }
+
+// ── CompletedView ──────────────────────────────────────────────────────────────
 
 function CompletedView({ onBack }: { onBack: () => void }) {
   return (
@@ -521,6 +617,8 @@ function CompletedView({ onBack }: { onBack: () => void }) {
     </SafeAreaView>
   );
 }
+
+// ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
@@ -540,20 +638,45 @@ const styles = StyleSheet.create({
   navTitle: { fontSize: 15, fontWeight: font.bold, color: colors.text, letterSpacing: 0.5, flex: 1, textAlign: 'center' },
   navCounter: { fontSize: 13, color: colors.textLight, width: 40, textAlign: 'right' },
 
+  // Map footer
+  mapFooter: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  mapBtn: {
+    flex: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  mapBtnPrimary: {
+    backgroundColor: colors.primary,
+  },
+  mapBtnPrimaryText: {
+    color: colors.textWhite,
+    fontWeight: font.bold,
+    fontSize: 15,
+  },
+  mapBtnSecondary: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mapBtnSecondaryText: {
+    color: colors.text,
+    fontWeight: font.semibold,
+    fontSize: 14,
+  },
+
   centered: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
   phaseEmoji: { fontSize: 64, marginBottom: spacing.md },
   phaseTitle: { fontSize: 20, fontWeight: font.bold, color: colors.text, textAlign: 'center', textTransform: 'uppercase', marginBottom: spacing.md },
   phaseDesc: { fontSize: 14, color: colors.textLight, textAlign: 'center', lineHeight: 20, marginBottom: spacing.xl },
-
-  distanceBanner: {
-    backgroundColor: '#FFF3E0',
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
-  },
-  distanceText: { color: colors.text, fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
   primaryButton: {
     backgroundColor: colors.primary,
@@ -564,48 +687,38 @@ const styles = StyleSheet.create({
     minWidth: 240,
   },
   primaryButtonText: { color: colors.textWhite, fontWeight: font.bold, fontSize: 15, letterSpacing: 0.5 },
+  buttonDisabled: { opacity: 0.4 },
 
-  navButtonsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    width: '100%',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: colors.card,
+  // Content (dialogues + questions en scroll)
+  contentScrollContainer: { padding: spacing.lg, gap: spacing.md },
+  contentCta: { paddingTop: spacing.md },
+
+  // Encart info (dialogue sans korrigan)
+  infoBox: {
+    backgroundColor: '#FFF8E1',
     borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
-  secondaryButtonText: {
-    color: colors.text,
-    fontWeight: font.semibold,
-    fontSize: 13,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
+  infoBoxIcon: { fontSize: 15, color: '#92400E', marginTop: 1 },
+  infoBoxText: { flex: 1, fontSize: 13, color: '#78350F', lineHeight: 19, fontStyle: 'italic' },
 
   // Dialogues
-  dialogueContainer: { flexGrow: 1, padding: spacing.lg },
-  dialogueLine: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.lg },
+  dialogueLine: { flexDirection: 'row', alignItems: 'flex-start' },
   dialogueAvatar: { width: 48, height: 48, borderRadius: radius.full, marginRight: spacing.md, resizeMode: 'cover' },
   dialogueAvatarFallback: { backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   dialogueBubble: { flex: 1, backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   dialogueSpeaker: { fontSize: 12, fontWeight: font.bold, color: colors.primary, marginBottom: spacing.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
   dialogueText: { fontSize: 15, color: colors.text, lineHeight: 22 },
-  dialogueFooter: { backgroundColor: colors.card, padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
-
+  questionDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
   // Questions
-  questionsContainer: { padding: spacing.md, gap: spacing.md },
-  questionsSubtitle: { fontSize: 14, color: colors.textLight, textAlign: 'center', marginBottom: spacing.sm },
   questionCard: { backgroundColor: colors.card, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  questionLabel: { fontSize: 11, fontWeight: font.bold, color: colors.accent, letterSpacing: 1, marginBottom: spacing.sm },
   questionCardWrong: { borderColor: colors.error },
-  questionNumber: { fontSize: 11, fontWeight: font.bold, color: colors.textLight, letterSpacing: 0.5, marginBottom: spacing.xs },
   questionText: { fontSize: 15, fontWeight: font.semibold, color: colors.text, marginBottom: spacing.sm, lineHeight: 20 },
   answerInput: { backgroundColor: colors.background, borderRadius: radius.sm, padding: spacing.sm, fontSize: 15, color: colors.text, borderWidth: 1, borderColor: colors.border },
   answerInputWrong: { borderColor: colors.error, backgroundColor: '#FFF5F5' },

@@ -6,8 +6,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { huntApi, progressApi } from '@tresors/shared';
-import type { TreasureHuntDTO, UserProgressDTO } from '@tresors/shared';
+import type { TreasureHuntDTO, UserProgressDTO, StepDTO } from '@tresors/shared';
 import { colors, spacing, radius, font } from '../../src/theme';
+import { getKorriganAssets } from '../../src/korrigans';
 
 export default function HuntDetailScreen() {
   const router = useRouter();
@@ -114,44 +115,87 @@ export default function HuntDetailScreen() {
             {korrigan && <InfoBadge label="KORRIGAN" value={korrigan.name} />}
           </View>
 
-          {/* Progression en cours */}
-          {progress && !progress.isCompleted && (
-            <View style={styles.progressBanner}>
-              <Text style={styles.progressBannerText}>
-                ▶ En cours — Étape {progress.currentStep}
-              </Text>
-            </View>
-          )}
+          {/* Badge trésor découvert */}
           {progress?.isCompleted && (
             <View style={[styles.progressBanner, styles.progressBannerDone]}>
               <Text style={styles.progressBannerText}>✅ Trésor découvert !</Text>
             </View>
           )}
         </View>
-      </ScrollView>
 
-      {/* CTA bas */}
-      <View style={styles.cta}>
-        {!progress || progress.isCompleted ? (
-          <TouchableOpacity
-            style={styles.ctaButton}
-            onPress={handlePlay}
-            disabled={starting}
-          >
-            {starting
-              ? <ActivityIndicator color={colors.textWhite} />
-              : <Text style={styles.ctaText}>
-                  {progress?.isCompleted ? '🔄  REJOUER' : '🚀  DÉMARRER LA CHASSE'}
-                </Text>
-            }
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.ctaButton} onPress={handleContinue}>
-            <Text style={styles.ctaText}>▶  CONTINUER — ÉTAPE {progress.currentStep}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+        {/* Préambule — dialogues intro de l'étape 1 */}
+        <Preamble steps={hunt.steps} />
+
+        {/* CTA en bas du scroll, après le préambule */}
+        <View style={styles.cta}>
+          {!progress || progress.isCompleted ? (
+            <TouchableOpacity
+              style={styles.ctaButton}
+              onPress={handlePlay}
+              disabled={starting}
+            >
+              {starting
+                ? <ActivityIndicator color={colors.textWhite} />
+                : <Text style={styles.ctaText}>
+                    {progress?.isCompleted ? '▶  REJOUER' : '🚀  DÉMARRER LA CHASSE'}
+                  </Text>
+              }
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.ctaStack}>
+              <TouchableOpacity style={styles.ctaButton} onPress={handleContinue}>
+                <Text style={styles.ctaText}>▶  CONTINUER LE PARCOURS</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.ctaButton, styles.ctaButtonSecondary]}
+                onPress={handlePlay}
+                disabled={starting}
+              >
+                {starting
+                  ? <ActivityIndicator color={colors.primary} />
+                  : <Text style={styles.ctaTextSecondary}>↺  RECOMMENCER DEPUIS LE DÉBUT</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+      </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function Preamble({ steps }: { steps?: StepDTO[] }) {
+  // L'étape 0 est le préambule — dialogues affichés avant de démarrer
+  const introStep = steps?.find(s => s.stepOrder === 0);
+  const dialogues = introStep?.content?.filter(c => c.type === 'dialogue' && c.dialogue) ?? [];
+  if (dialogues.length === 0) return null;
+
+  return (
+    <View style={styles.preamble}>
+      <Text style={styles.preambleTitle}>PRÉAMBULE</Text>
+      {dialogues.map((item, i) => {
+        const name = item.dialogue!.korrigan?.name;
+        const ka = getKorriganAssets(name);
+        return (
+          <View key={i} style={styles.preambleLine}>
+            {ka ? (
+              <Image source={ka.image} style={styles.preambleAvatar} />
+            ) : (
+              <View style={[styles.preambleAvatar, styles.preambleAvatarFallback]}>
+                <Text style={{ fontSize: 18 }}>🧙</Text>
+              </View>
+            )}
+            <View style={styles.preambleBubble}>
+              <Text style={[styles.preambleSpeaker, ka && { color: ka.color }]}>
+                {name ?? 'Korrigan'}
+              </Text>
+              <Text style={styles.preambleText}>{item.dialogue!.text}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -293,16 +337,85 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  ctaStack: {
+    gap: spacing.sm,
+  },
   ctaButton: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
   },
+  ctaButtonSecondary: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   ctaText: {
     color: colors.textWhite,
     fontWeight: font.bold,
     fontSize: 16,
     letterSpacing: 1,
+  },
+  ctaTextSecondary: {
+    color: colors.textLight,
+    fontWeight: font.semibold,
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+
+  // Préambule
+  preamble: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.md,
+  },
+  preambleTitle: {
+    fontSize: 13,
+    fontWeight: font.bold,
+    color: colors.textLight,
+    letterSpacing: 1.5,
+    marginBottom: spacing.md,
+  },
+  preambleLine: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  preambleAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    marginRight: spacing.sm,
+    resizeMode: 'cover',
+  },
+  preambleAvatarFallback: {
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preambleBubble: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  preambleSpeaker: {
+    fontSize: 11,
+    fontWeight: font.bold,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  preambleText: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
   },
 });
